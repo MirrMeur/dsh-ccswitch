@@ -1,0 +1,18 @@
+{
+  "name": "dsh-ccswitch",
+  "version": "0.1.0",
+  "description": "Connect DeepSeek Harness to local CC Switch providers, models, API keys, and OAuth accounts.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "DSH CC Switch",
+    "shortDescription": "Use local CC Switch models in DSH.",
+    "longDescription": "Discovers local CC Switch providers and models for DeepSeek Harness with runtime API-key and OAuth resolution.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Help me use local CC Switch models in DSH."
+  }
+}
