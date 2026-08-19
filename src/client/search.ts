@@ -21,6 +21,13 @@ function normalized(value: string): string {
   return value.trim().toLocaleLowerCase()
 }
 
+function modelSearchText(model: HTMLButtonElement): string {
+  const visibleName = model.querySelector<HTMLElement>('[class*="modelName"]')?.textContent?.trim() ?? ''
+  const title = model.getAttribute('title') ?? ''
+  const ariaLabel = model.getAttribute('aria-label') ?? ''
+  return [visibleName, title, ariaLabel].filter(value => value.length > 0).join(' ')
+}
+
 function directGroups(container: HTMLElement): HTMLElement[] {
   return Array.from(container.children)
     .filter(child => child.matches(MODEL_GROUP_SELECTOR)) as HTMLElement[]
@@ -37,7 +44,7 @@ export function filterModelGroups(groups: HTMLElement, query: string): FilterRes
     const models = group.querySelectorAll<HTMLButtonElement>(MODEL_ITEM_SELECTOR)
     for (const model of models) {
       totalModels += 1
-      const matches = normalized(model.title).includes(needle)
+      const matches = normalized(modelSearchText(model)).includes(needle)
       model.hidden = !matches
       model.setAttribute(FILTER_ATTRIBUTE, matches ? 'visible' : 'hidden')
       if (matches) groupMatches += 1
@@ -127,7 +134,8 @@ export function enhanceModelMenu(menu: HTMLElement, groups: HTMLElement): Search
   input.addEventListener('change', onInput)
   input.addEventListener('search', onInput)
   input.addEventListener('keydown', onKeyDown)
-  const timer = window.setInterval(refresh, 100)
+  const view = menu.ownerDocument.defaultView
+  const timer = view?.setInterval(refresh, 100)
   refresh()
 
   return {
@@ -140,7 +148,7 @@ export function enhanceModelMenu(menu: HTMLElement, groups: HTMLElement): Search
       input.removeEventListener('change', onInput)
       input.removeEventListener('search', onInput)
       input.removeEventListener('keydown', onKeyDown)
-      window.clearInterval(timer)
+      if (timer !== undefined) view?.clearInterval(timer)
       restoreModelGroups(groups)
       control.remove()
     },

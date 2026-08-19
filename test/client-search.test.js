@@ -14,12 +14,12 @@ function fixture() {
       <div class="groups">
         <section role="group">
           <div>Company Codex</div>
-          <button role="menuitemradio" title="gpt-5.6-sol">gpt-5.6-sol</button>
-          <button role="menuitemradio" title="GPT-5 Mini">GPT-5 Mini</button>
+          <button role="menuitemradio" title="internal-codex-id"><span class="modelName">gpt-5.6-sol</span></button>
+          <button role="menuitemradio" title="internal-mini-id"><span class="modelName">GPT-5 Mini</span></button>
         </section>
         <section role="group">
           <div>DeepSeek Provider</div>
-          <button role="menuitemradio" title="deepseek-chat">deepseek-chat</button>
+          <button role="menuitemradio" title="deepseek-chat"><span class="modelName">deepseek-chat</span></button>
         </section>
       </div>
     </div>
@@ -41,8 +41,8 @@ test('filters case-insensitively by model name only and hides empty providers', 
   assert.deepEqual(result, { matchedModels: 1, totalModels: 3 })
   assert.equal(groups.children[0].hidden, false)
   assert.equal(groups.children[1].hidden, true)
-  assert.equal(groups.querySelector('[title="gpt-5.6-sol"]').hidden, false)
-  assert.equal(groups.querySelector('[title="GPT-5 Mini"]').hidden, true)
+  assert.equal(groups.querySelector('[title="internal-codex-id"]').hidden, false)
+  assert.equal(groups.querySelector('[title="internal-mini-id"]').hidden, true)
 
   const providerOnly = filterModelGroups(groups, 'DeepSeek Provider')
   assert.equal(providerOnly.matchedModels, 0)
@@ -102,10 +102,10 @@ test('polling applies a changed search value when no input event is delivered', 
 
   await new Promise(resolve => setTimeout(resolve, 120))
 
-  assert.equal(groups.querySelector('[title="gpt-5.6-sol"]').getAttribute('data-dsh-ccswitch-model-filtered'), 'hidden')
+  assert.equal(groups.querySelector('[title="internal-codex-id"]').getAttribute('data-dsh-ccswitch-model-filtered'), 'hidden')
   assert.equal(groups.querySelector('[title="deepseek-chat"]').getAttribute('data-dsh-ccswitch-model-filtered'), 'visible')
   controller.dispose()
-  assert.equal(groups.querySelector('[title="gpt-5.6-sol"]').hasAttribute('data-dsh-ccswitch-model-filtered'), false)
+  assert.equal(groups.querySelector('[title="internal-codex-id"]').hasAttribute('data-dsh-ccswitch-model-filtered'), false)
 })
 
 test('closing and reopening a model menu resets search', async () => {
