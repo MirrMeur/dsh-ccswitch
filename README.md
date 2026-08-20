@@ -104,4 +104,4 @@ dsh web --host 127.0.0.1 --port 3080
 2. CC Switch 中的模型是否可以正常请求。
 3. 安装插件后是否重启并刷新了 DSH。
 4. 是否配置了错误的 `ccswitch-providers.json` 筛选条件。
-5. 使用自定义 CC Switch 目录时，`DSH_CCSWITCH_DB` 是否指向正确的 `cc-switch.db` 文件
+5. 使用自定义 CC Switch 目录时，`DSH_CCSWITCH_DB` 是否指向正确的 `cc-switch.db` 文件。
