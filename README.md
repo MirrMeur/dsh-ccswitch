@@ -1,8 +1,26 @@
 # dsh-ccswitch
 
-将本机 [CC Switch](https://github.com/farion1231/cc-switch) 的 provider、模型和认证配置以只读方式接入 DeepSeek Harness（DSH）。插件会把每个 CC Switch provider 注册为独立的 DSH 模型路由，并定期检查数据库变化。
+将 DSH 所在设备当前用户的 [CC Switch](https://github.com/farion1231/cc-switch) provider、模型和认证配置以只读方式接入 DeepSeek Harness（DSH）。插件不绑定特定用户、provider、目录或操作系统；它会在每台设备上读取该设备自己的 CC Switch 数据，并把可用 provider 注册为独立的 DSH 模型路由。
 
 Web 端同时会在 DSH 模型选择列表中增加“搜索模型”输入框。搜索只匹配模型名称，不区分大小写，并会隐藏没有匹配模型的 provider 分组。
+
+## 平台与多设备
+
+插件支持 CC Switch 与 DSH 可运行的 macOS、Windows 和 Linux 环境。默认路径由 Node.js 的用户主目录和当前操作系统路径规则生成，不使用固定盘符、固定用户名或开发者电脑路径。
+
+| 平台 | 默认 CC Switch 数据库 | provider 选择文件 |
+| --- | --- | --- |
+| macOS/Linux | `$HOME/.cc-switch/cc-switch.db` | `$HOME/.dsh/ccswitch-providers.json` |
+| Windows PowerShell | `$HOME\.cc-switch\cc-switch.db` | `$HOME\.dsh\ccswitch-providers.json` |
+| Windows cmd | `%USERPROFILE%\.cc-switch\cc-switch.db` | `%USERPROFILE%\.dsh\ccswitch-providers.json` |
+
+在两台或更多设备上使用时，需要在每台运行 DSH 的设备上分别安装插件：
+
+- 每台设备只读取该设备当前用户的 CC Switch 数据库和凭据，不依赖其他设备在线；
+- macOS 与 Windows 可以使用不同的 provider、模型、数据库目录和筛选配置；
+- CC Switch 使用自定义数据目录、便携目录或同步盘时，在对应设备上单独设置 `DSH_CCSWITCH_DB`；
+- provider 选择文件和 `DSH_CCSWITCH_PROVIDERS` 也是设备级配置，不要求两台设备保持一致；
+- 插件不会上传、复制或同步 API key、OAuth token 和 CC Switch 数据库。跨设备支持表示同一插件可在不同设备独立运行，不表示从一台设备远程读取另一台设备的凭据。
 
 ## 安装
 
@@ -50,14 +68,23 @@ dsh web --host 127.0.0.1 --port 3080
 ~/.cc-switch/cc-switch.db
 ```
 
-这里的 `~` 表示当前用户主目录：Windows 通常是 `%USERPROFILE%`，macOS/Linux 通常是 `$HOME`。如果使用 CC Switch 自定义数据目录、便携版或云同步目录，请通过 `DSH_CCSWITCH_DB` 指定 `cc-switch.db` 的完整路径；Windows PowerShell 示例：
+这里的 `~` 表示 DSH 进程所属用户的主目录。可以通过 `DSH_CCSWITCH_DB` 指定当前设备上 `cc-switch.db` 的完整路径。
+
+macOS/Linux：
+
+```bash
+DSH_CCSWITCH_DB='/path/to/cc-switch.db' \
+  dsh web --host 127.0.0.1 --port 3080
+```
+
+Windows PowerShell：
 
 ```powershell
 $env:DSH_CCSWITCH_DB = 'D:\path\to\cc-switch.db'
 dsh web --host 127.0.0.1 --port 3080
 ```
 
-可以通过 `DSH_CCSWITCH_DB` 指定数据库路径。插件默认每 2 秒读取一次数据库，路由变化会原子刷新到 DSH，不需要再次安装插件。
+插件默认每 2 秒读取一次当前设备的数据库，路由变化会原子刷新到 DSH，不需要再次安装插件。
 
 ### 选择 provider
 
@@ -75,7 +102,7 @@ $env:DSH_CCSWITCH_PROVIDERS = 'my-codex-provider,ccswitch/claude/*'
 dsh web --host 127.0.0.1 --port 3080
 ```
 
-也可以创建用户级文件 `~/.dsh/ccswitch-providers.json`，插件会轮询它的变化。Windows PowerShell 中对应路径通常是 `$HOME\.dsh\ccswitch-providers.json`，在 cmd 中等价于 `%USERPROFILE%\.dsh\ccswitch-providers.json`：
+也可以在当前设备创建用户级文件 `~/.dsh/ccswitch-providers.json`，插件会轮询它的变化。具体平台路径见上方表格：
 
 ```json
 {
