@@ -2,6 +2,22 @@
   "name": "dsh-ccswitch",
   "version": "0.1.0",
   "description": "Read-only CC Switch provider bridge for DeepSeek Harness",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/upJiang/dsh-ccswitch.git"
+  },
+  "homepage": "https://github.com/upJiang/dsh-ccswitch#readme",
+  "bugs": {
+    "url": "https://github.com/upJiang/dsh-ccswitch/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cc-switch",
+    "provider",
+    "model"
+  ],
   "type": "module",
   "main": "lib/index.mjs",
   "types": "lib/index.d.mts",

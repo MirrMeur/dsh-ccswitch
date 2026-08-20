@@ -6,11 +6,14 @@ Web 端同时会在 DSH 模型选择列表中增加“搜索模型”输入框�
 
 ## 安装
 
+从源码安装（将 `<owner>` 替换为实际 GitHub 仓库所有者）：
+
 ```bash
-cd /Users/mac/Desktop/dsh-project/dsh-ccswitch
+git clone https://github.com/<owner>/dsh-ccswitch.git
+cd dsh-ccswitch
 pnpm install
 pnpm build
-dsh plugin --profile web add /Users/mac/Desktop/dsh-project/dsh-ccswitch
+dsh plugin --profile web add .
 ```
 
 安装或更新插件后重启当前 DSH profile：
@@ -36,7 +39,7 @@ dsh web --host 127.0.0.1 --port 3080
 默认注册所有有可用配置的 CC Switch provider。需要限制范围时，可以使用环境变量：
 
 ```bash
-DSH_CCSWITCH_PROVIDERS='公司-newapi-codex,ccswitch/codex/a0eb08cb-bd8c-43ec-90c3-3d6dc5a754ff' \
+DSH_CCSWITCH_PROVIDERS='my-codex-provider,ccswitch/claude/*' \
   dsh web --host 127.0.0.1 --port 3080
 ```
 
@@ -45,7 +48,7 @@ DSH_CCSWITCH_PROVIDERS='公司-newapi-codex,ccswitch/codex/a0eb08cb-bd8c-43ec-90
 ```json
 {
   "include": [
-    "公司-newapi-codex",
+    "my-codex-provider",
     "ccswitch/claude/*"
   ]
 }
@@ -77,8 +80,8 @@ DSH_CCSWITCH_PROVIDERS='公司-newapi-codex,ccswitch/codex/a0eb08cb-bd8c-43ec-90
 ```bash
 pnpm install
 pnpm typecheck
+pnpm test
 pnpm build
-python3 /Users/mac/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py .
 ```
 
 插件源码位于 `src/`，入口是 `src/index.ts`。适配器使用 DSH `llm-pi-ai` 的上下文、replay 和 stream 转换实现，避免破坏工具调用、图片附件、上下文溢出和错误分类语义。
