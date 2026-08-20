@@ -1,9 +1,8 @@
 import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { CcSwitchRoute } from './types.ts'
+import { resolveCcSwitchPaths } from './paths.ts'
 
-export const DEFAULT_PROVIDER_SELECTION_PATH = join(homedir(), '.dsh', 'ccswitch-providers.json')
+export const DEFAULT_PROVIDER_SELECTION_PATH = resolveCcSwitchPaths().providerSelection
 
 interface ProviderSelectionFile {
   readonly include?: unknown

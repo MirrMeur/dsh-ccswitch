@@ -8,6 +8,8 @@ Web 端同时会在 DSH 模型选择列表中增加“搜索模型”输入框�
 
 从源码安装（将 `<owner>` 替换为实际 GitHub 仓库所有者）：
 
+前置条件：Node.js `>=22.19.0`、pnpm 11，以及已安装并可执行的 DSH。以下命令在 macOS、Linux 和 Windows PowerShell 中均可使用；PowerShell 不要使用 Bash 的反斜杠换行语法。
+
 ```bash
 git clone https://github.com/<owner>/dsh-ccswitch.git
 cd dsh-ccswitch
@@ -16,11 +18,27 @@ pnpm build
 dsh plugin --profile web add .
 ```
 
-安装或更新插件后重启当前 DSH profile：
+安装或更新插件后重启当前 DSH profile。前台运行时先按 `Ctrl+C` 停止旧进程，再重新执行启动命令：
+
+```bash
+dsh web --host 127.0.0.1 --port 3080
+```
+
+如果旧进程是在后台运行：
+
+macOS/Linux：
 
 ```bash
 pid=$(lsof -t -iTCP:3080 -sTCP:LISTEN | head -1)
 [ -z "$pid" ] || kill "$pid"
+dsh web --host 127.0.0.1 --port 3080
+```
+
+Windows PowerShell：
+
+```powershell
+$connection = Get-NetTCPConnection -LocalPort 3080 -State Listen -ErrorAction SilentlyContinue
+if ($connection) { Stop-Process -Id $connection.OwningProcess -Force }
 dsh web --host 127.0.0.1 --port 3080
 ```
 
@@ -30,6 +48,13 @@ dsh web --host 127.0.0.1 --port 3080
 
 ```text
 ~/.cc-switch/cc-switch.db
+```
+
+这里的 `~` 表示当前用户主目录：Windows 通常是 `%USERPROFILE%`，macOS/Linux 通常是 `$HOME`。如果使用 CC Switch 自定义数据目录、便携版或云同步目录，请通过 `DSH_CCSWITCH_DB` 指定 `cc-switch.db` 的完整路径；Windows PowerShell 示例：
+
+```powershell
+$env:DSH_CCSWITCH_DB = 'D:\path\to\cc-switch.db'
+dsh web --host 127.0.0.1 --port 3080
 ```
 
 可以通过 `DSH_CCSWITCH_DB` 指定数据库路径。插件默认每 2 秒读取一次数据库，路由变化会原子刷新到 DSH，不需要再次安装插件。
@@ -43,7 +68,14 @@ DSH_CCSWITCH_PROVIDERS='my-codex-provider,ccswitch/claude/*' \
   dsh web --host 127.0.0.1 --port 3080
 ```
 
-也可以创建用户级文件 `~/.dsh/ccswitch-providers.json`，插件会轮询它的变化：
+Windows PowerShell：
+
+```powershell
+$env:DSH_CCSWITCH_PROVIDERS = 'my-codex-provider,ccswitch/claude/*'
+dsh web --host 127.0.0.1 --port 3080
+```
+
+也可以创建用户级文件 `~/.dsh/ccswitch-providers.json`，插件会轮询它的变化。Windows PowerShell 中对应路径通常是 `$HOME\.dsh\ccswitch-providers.json`，在 cmd 中等价于 `%USERPROFILE%\.dsh\ccswitch-providers.json`：
 
 ```json
 {
@@ -59,8 +91,8 @@ DSH_CCSWITCH_PROVIDERS='my-codex-provider,ccswitch/claude/*' \
 支持：
 
 - Claude provider 的 API key 和 `ANTHROPIC_AUTH_TOKEN`；
-- Codex 的 OpenAI-compatible API key，以及 CC Switch 的 Codex OAuth 文件（缺少托管文件时只读回退 `~/.codex/auth.json`）；
-- Gemini API key 和 `~/.gemini/oauth_creds.json` OAuth；Gemini OAuth 使用 Bearer-only 请求，不会把 access token 当成 `x-goog-api-key`；
+- Codex 的 OpenAI-compatible API key，以及 CC Switch 的 Codex OAuth 文件（缺少托管文件时只读回退用户主目录下的 `.codex/auth.json`）；
+- Gemini API key 和用户主目录下 `.gemini/oauth_creds.json` OAuth；Gemini OAuth 使用 Bearer-only 请求，不会把 access token 当成 `x-goog-api-key`；
 - Claude Messages、OpenAI Completions、OpenAI Responses、Gemini Generative AI 协议；
 - `/models`、Gemini `/v1beta/models` 和 Codex OAuth models endpoint 的模型发现。
 - Claude、Codex/GPT 和 Gemini 路由的图片输入；图片会通过 DSH 的持久化附件服务读取并按目标协议转换。

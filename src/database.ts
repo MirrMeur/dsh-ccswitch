@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
-import { homedir } from 'node:os'
 import { statSync } from 'node:fs'
-import { join } from 'node:path'
 import type {
   CcSwitchAppType,
   CcSwitchAuthKind,
@@ -13,6 +11,7 @@ import type {
   CcSwitchSnapshot,
 } from './types.ts'
 import { DEFAULT_PROVIDER_SELECTION_PATH, providerSelected, readProviderSelectors } from './selection.ts'
+import { resolveCcSwitchPaths } from './paths.ts'
 
 export interface ProviderRecord {
   readonly id: string
@@ -249,7 +248,8 @@ export class CcSwitchRepository {
   private snapshot: CcSwitchSnapshot = { version: 0, fingerprint: '', routes: [] }
 
   constructor(options: Partial<CcSwitchConfig> = {}) {
-    const dbPath = options.dbPath ?? process.env.DSH_CCSWITCH_DB ?? join(homedir(), '.cc-switch', 'cc-switch.db')
+    const defaults = resolveCcSwitchPaths()
+    const dbPath = options.dbPath ?? process.env.DSH_CCSWITCH_DB ?? defaults.database
     const requestedApps = options.appTypes ?? APP_TYPES
     const codexReasoningEffort = options.codexReasoningEffort
       ?? configuredCodexReasoningEffort(process.env.DSH_CCSWITCH_CODEX_REASONING)

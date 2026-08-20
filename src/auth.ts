@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { CcSwitchCredential, CcSwitchRoute } from './types.ts'
 import { CcSwitchRepository, type ProviderRecord } from './database.ts'
+import { resolveCcSwitchPaths } from './paths.ts'
 
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 const CODEX_TOKEN_URL = 'https://auth.openai.com/oauth/token'
@@ -110,7 +111,7 @@ function normalizeGeminiCredentials(value: unknown): GeminiOAuthCredentials | un
   }
 }
 
-async function readGeminiOAuthCredentials(home: string): Promise<GeminiOAuthCredentials | undefined> {
+async function readGeminiOAuthCredentials(path: string): Promise<GeminiOAuthCredentials | undefined> {
   // Gemini CLI stores the current credential in macOS Keychain when keytar is
   // available, with the file kept as a backwards-compatible fallback.
   if (process.platform === 'darwin') {
@@ -124,7 +125,7 @@ async function readGeminiOAuthCredentials(home: string): Promise<GeminiOAuthCred
       // Missing Keychain item or a denied prompt falls back to the file.
     }
   }
-  const file = await readJson<unknown>(home + '/.gemini/oauth_creds.json')
+  const file = await readJson<unknown>(path)
   return normalizeGeminiCredentials(file)
 }
 
@@ -152,10 +153,10 @@ async function codexOAuthCredential(
   route: CcSwitchRoute,
   repository: CcSwitchRepository,
 ): Promise<CcSwitchCredential> {
-  const dbDir = repository.config.dbPath.replace(/[/\\][^/\\]+$/, '')
-  const store = await readJson<CodexOAuthStore>(dbDir + '/codex_oauth_auth.json')
+  const paths = resolveCcSwitchPaths(undefined, repository.config.dbPath)
+  const store = await readJson<CodexOAuthStore>(paths.codexOAuthStore)
   const accounts = store?.accounts ?? {}
-  const native = await readJson<NativeCodexAuth>((process.env.HOME ?? process.env.USERPROFILE ?? '') + '/.codex/auth.json')
+  const native = await readJson<NativeCodexAuth>(paths.codexAuth)
   const nativeAccountId = nonEmpty(native?.tokens?.account_id)
   const accountId = route.accountId
     ?? nonEmpty(store?.default_account_id)
@@ -193,9 +194,9 @@ async function codexOAuthCredential(
 }
 
 async function geminiOAuthCredential(route: CcSwitchRoute, repository: CcSwitchRepository, record: ProviderRecord): Promise<CcSwitchCredential> {
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? ''
+  const paths = resolveCcSwitchPaths(undefined, repository.config.dbPath)
   const configured = settingValue(record, ['env', 'GEMINI_API_KEY'], ['apiKey'], ['api_key'])
-  const credentials = normalizeGeminiCredentials(configured) ?? await readGeminiOAuthCredentials(home)
+  const credentials = normalizeGeminiCredentials(configured) ?? await readGeminiOAuthCredentials(paths.geminiOAuthCredentials)
   if (credentials === undefined) throw new Error('CC Switch Gemini OAuth credentials are not available')
   const cacheKey = 'gemini:' + route.sourceId
   const cached = cache.get(cacheKey)
