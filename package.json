@@ -1,6 +1,6 @@
 {
   "name": "dsh-ccswitch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read-only CC Switch provider bridge for DeepSeek Harness",
   "packageManager": "pnpm@11.7.0",
   "repository": {
@@ -40,14 +40,19 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-transform-types --test test/*.test.js"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-attachment": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-brand": "^0.1.0-rc.7",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.7",
-    "@earendil-works/pi-ai": "0.82.1"
+    "@earendil-works/pi-ai": "^0.82.1"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-attachment": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-brand": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.7",
+    "@earendil-works/pi-ai": "0.82.1",
     "@types/node": "^22.20.0",
     "jsdom": "^26.1.0",
     "tsdown": "^0.22.2",

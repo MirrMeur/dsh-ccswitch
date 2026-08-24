@@ -105,3 +105,5 @@ dsh web --host 127.0.0.1 --port 3080
 3. 安装插件后是否重启并刷新了 DSH。
 4. 是否配置了错误的 `ccswitch-providers.json` 筛选条件。
 5. 使用自定义 CC Switch 目录时，`DSH_CCSWITCH_DB` 是否指向正确的 `cc-switch.db` 文件。
+
+如果市场提示 `@google/genai` 或 `protobufjs` 的构建脚本被 pnpm 拦截，请更新到 `dsh-ccswitch` `0.1.1` 或更高版本后重新安装。新版会使用 DSH 已提供的运行时依赖，不需要为这两个包单独放行构建脚本。
