@@ -73,9 +73,11 @@ function declaredRoute(models) {
 }
 
 test('a declared model table overrides the reasoning name heuristic', () => {
-  // `gpt-6-sol` matches no branch of CODEX_REASONING_MODEL, so without a
+  // `relay-custom` matches no branch of CODEX_REASONING_MODEL, so without a
   // declaration it advertises no reasoning at all.
-  assert.equal(modelForRoute(route('codex', 'gpt-6-sol'), 'gpt-6-sol')?.reasoning, false)
+  assert.equal(modelForRoute(route('codex', 'relay-custom'), 'relay-custom')?.reasoning, false)
+  // The `gpt-6*` family is covered by the heuristic, declaration or not.
+  assert.equal(modelForRoute(route('codex', 'gpt-6-sol'), 'gpt-6-sol')?.reasoning, true)
 
   const xhighOnly = declaredRoute([
     { id: 'gpt-6-sol', name: 'gpt-6-sol', contextWindow: 128_000, maxTokens: 8_192, reasoningLevels: ['xhigh'] },
@@ -162,9 +164,13 @@ test('endpoint discovery keeps the thinking levels CC Switch declared', async ()
   ])
   // The runtime-wide default still wins while the model supports it.
   assert.equal(declared.reasoning?.defaultEffort, 'minimal')
-  // The endpoint's own size still wins, and an undeclared model stays bare.
+  // The endpoint's own size still wins, and an undeclared model falls back to
+  // the family heuristic rather than advertising nothing at all.
   assert.equal(declared.context.contextWindow, 1_000_000)
-  assert.equal((await adapter.resolveModel(codex.provider, 'gpt-6-astra')).reasoning, undefined)
+  const heuristic = await adapter.resolveModel(codex.provider, 'gpt-6-astra')
+  assert.deepEqual(heuristic.reasoning?.efforts.map(effort => effort.id), [
+    'minimal', 'low', 'medium', 'high',
+  ])
 
   // A model that cannot honour the runtime default answers with its own.
   const narrowed = new CcSwitchAdapter({
@@ -186,4 +192,64 @@ test('endpoint discovery keeps the thinking levels CC Switch declared', async ()
     { id: 'gpt-6-sol', name: 'gpt-6-sol', contextWindow: 1_000_000, maxTokens: 128_000 },
   ])
   assert.equal((await narrowed.resolveModel('ccswitch/codex/test', 'gpt-6-sol')).reasoning?.defaultEffort, 'xhigh')
+})
+
+test('a route context window covers models that declare no size', () => {
+  const codex = {
+    ...route('codex', 'gpt-6-sol'),
+    contextWindow: 1_000_000,
+    models: [{ id: 'gpt-6-sol', name: 'gpt-6-sol' }],
+  }
+  const model = modelForRoute(codex, 'gpt-6-sol')
+  assert.equal(model?.contextWindow, 1_000_000)
+  // The route carries no output cap, so the built-in fallback still applies.
+  assert.equal(model?.maxTokens, 32_768)
+
+  // A model that declares its own size outranks the route default.
+  const declared = {
+    ...codex,
+    models: [{ id: 'gpt-6-sol', name: 'gpt-6-sol', contextWindow: 200_000, maxTokens: 16_384 }],
+  }
+  assert.equal(modelForRoute(declared, 'gpt-6-sol')?.contextWindow, 200_000)
+  assert.equal(modelForRoute(declared, 'gpt-6-sol')?.maxTokens, 16_384)
+
+  // With neither, the built-in 256K fallback keeps its old meaning.
+  const bare = { ...route('codex', 'gpt-6-sol'), models: [{ id: 'gpt-6-sol', name: 'gpt-6-sol' }] }
+  assert.equal(modelForRoute(bare, 'gpt-6-sol')?.contextWindow, 262_144)
+  assert.equal(modelForRoute(bare, 'gpt-6-sol')?.maxTokens, 32_768)
+})
+
+test('an endpoint that reports no sizes does not shrink a declared model', async () => {
+  // A relay whose `/models` returns slugs only used to reset every model to the
+  // 256K fallback, which made a 1M-token session fail its own compaction.
+  const codex = {
+    ...declaredRoute([{
+      id: 'gpt-6-sol',
+      name: 'gpt-6-sol',
+      contextWindow: 1_000_000,
+      maxTokens: 128_000,
+      reasoningLevels: ['minimal', 'high'],
+    }]),
+    contextWindow: 1_000_000,
+  }
+  const repository = {
+    current: { version: 1, fingerprint: 'test', routes: [codex] },
+    config: { codexReasoningEffort: 'minimal' },
+  }
+  const adapter = new CcSwitchAdapter(repository)
+
+  adapter.setDiscoveredModels(codex.provider, [
+    { id: 'gpt-6-sol', name: 'gpt-6-sol' },
+    { id: 'gpt-6-astra', name: 'gpt-6-astra' },
+  ])
+
+  // The declared size survives the slug-only listing.
+  assert.equal((await adapter.resolveModel(codex.provider, 'gpt-6-sol')).context.contextWindow, 1_000_000)
+  // A model CC Switch never declared inherits the route default instead.
+  assert.equal((await adapter.resolveModel(codex.provider, 'gpt-6-astra')).context.contextWindow, 1_000_000)
+  // A reported size is still trusted over both.
+  adapter.setDiscoveredModels(codex.provider, [
+    { id: 'gpt-6-sol', name: 'gpt-6-sol', contextWindow: 400_000 },
+  ])
+  assert.equal((await adapter.resolveModel(codex.provider, 'gpt-6-sol')).context.contextWindow, 400_000)
 })

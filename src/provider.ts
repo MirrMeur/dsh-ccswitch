@@ -8,7 +8,15 @@ import type { CcSwitchModel, CcSwitchRoute } from './types.ts'
 import { geminiOAuthRoute } from './gemini-oauth.ts'
 
 const NO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-const CODEX_REASONING_MODEL = /^(?:gpt-5(?:[.-]|$)|o[134](?:[.-]|$)|codex(?:[.-]|$))/i
+const DEFAULT_CONTEXT_WINDOW = 262_144
+const DEFAULT_MAX_TOKENS = 32_768
+/**
+ * Codex reasoning families whose level picker is enabled by name when CC
+ * Switch declares no levels for them. `gpt-6*` joined the list once relays
+ * began serving the family; a model with a declared level list never reaches
+ * this heuristic.
+ */
+const CODEX_REASONING_MODEL = /^(?:gpt-[56](?:[.-]|$)|o[134](?:[.-]|$)|codex(?:[.-]|$))/i
 const CODEX_THINKING_LEVELS = {
   off: null,
   minimal: 'minimal',
@@ -61,6 +69,14 @@ function routeApi(route: CcSwitchRoute): ProviderStreams {
   }
 }
 
+/**
+ * Resolve the model table pi-ai sees.
+ *
+ * A size resolves in three steps: the model's own declaration, then the route
+ * default (Codex's `model_context_window`), then the built-in fallback. Without
+ * the middle step a relay that reports no sizes left every model at 256K while
+ * the user's own Codex config said 1M.
+ */
 function routeModels(route: CcSwitchRoute): readonly Model<Api>[] {
   return route.models.map((model) => {
     const thinkingLevelMap = thinkingLevelsFor(route, model)
@@ -74,8 +90,8 @@ function routeModels(route: CcSwitchRoute): readonly Model<Api>[] {
       ...(thinkingLevelMap === undefined ? {} : { thinkingLevelMap }),
       input: ['text', 'image'],
       cost: NO_COST,
-      contextWindow: model.contextWindow,
-      maxTokens: model.maxTokens,
+      contextWindow: model.contextWindow ?? route.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+      maxTokens: model.maxTokens ?? route.maxTokens ?? DEFAULT_MAX_TOKENS,
     }
   })
 }

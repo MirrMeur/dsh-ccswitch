@@ -103,17 +103,17 @@ export class CcSwitchAdapter extends LlmAdapter {
   /**
    * Publish endpoint-discovered models without touching the CC Switch DB.
    *
-   * An endpoint reports slugs and sizes but knows nothing about thinking
-   * levels, so the declared levels are carried over from the catalog entry of
-   * the same id. Without this the discovery pass would silently strip the
-   * reasoning a user configured, and only models the name heuristic happens to
-   * recognise would keep a level picker.
+   * An endpoint owns the slug list but not the meaning of a slug: it knows
+   * nothing about thinking levels, and many relays report no sizes at all. So
+   * the declared levels and any declared size are carried over from the catalog
+   * entry of the same id. Without this a discovery pass would strip the
+   * reasoning a user configured and reset a 1M-token model to the 256K
+   * fallback, which then made the session's own compaction overflow.
    */
   setDiscoveredModels(provider: string, models: readonly CcSwitchModel[]): void {
     if (models.length === 0) return
     const declared = new Map(
       (this.repository.current.routes.find(route => route.provider === provider)?.models ?? [])
-        .filter(model => model.reasoningLevels !== undefined || model.defaultReasoningLevel !== undefined)
         .map(model => [model.id, model]),
     )
     const merged = models.map((model) => {
@@ -121,6 +121,13 @@ export class CcSwitchAdapter extends LlmAdapter {
       if (source === undefined) return { ...model }
       return {
         ...model,
+        // A size the endpoint actually reported wins; silence does not.
+        ...(model.contextWindow !== undefined || source.contextWindow === undefined
+          ? {}
+          : { contextWindow: source.contextWindow }),
+        ...(model.maxTokens !== undefined || source.maxTokens === undefined
+          ? {}
+          : { maxTokens: source.maxTokens }),
         ...(source.reasoningLevels === undefined ? {} : { reasoningLevels: source.reasoningLevels }),
         ...(source.defaultReasoningLevel === undefined ? {} : { defaultReasoningLevel: source.defaultReasoningLevel }),
       }

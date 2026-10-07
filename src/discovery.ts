@@ -2,8 +2,6 @@ import type { CcSwitchCredential } from './types.ts'
 import type { CcSwitchModel, CcSwitchRoute } from './types.ts'
 
 const MAX_BYTES = 2 * 1024 * 1024
-const DEFAULT_CONTEXT_WINDOW = 262_144
-const DEFAULT_MAX_TOKENS = 32_768
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
@@ -58,15 +56,28 @@ function entries(body: unknown): unknown[] {
   return []
 }
 
-function parseModel(route: CcSwitchRoute, value: unknown): CcSwitchModel | undefined {
+/**
+ * Read one entry of an endpoint's model listing.
+ *
+ * Sizes stay `undefined` when the listing omits them. Filling in a default here
+ * would let a relay that reports only slugs overwrite the size CC Switch or the
+ * provider TOML declared, which is exactly how a 1M-token route ended up
+ * advertising 256K and failing its own compaction.
+ */
+function parseModel(value: unknown): CcSwitchModel | undefined {
   const record = value !== null && typeof value === 'object' ? value as Record<string, unknown> : {}
   const id = text(record.slug) ?? text(record.id) ?? text(record.model) ?? text(record.name)?.replace(/^models\//, '')
   if (id === undefined) return undefined
   const contextWindow = positive(record.context_window) ?? positive(record.contextWindow)
-    ?? positive(record.context_length) ?? positive(record.input_token_limit) ?? DEFAULT_CONTEXT_WINDOW
+    ?? positive(record.context_length) ?? positive(record.input_token_limit)
   const maxTokens = positive(record.max_output_tokens) ?? positive(record.maxTokens)
-    ?? positive(record.output_token_limit) ?? DEFAULT_MAX_TOKENS
-  return { id: id.replace(/^models\//, ''), name: text(record.display_name) ?? text(record.displayName) ?? id, contextWindow, maxTokens }
+    ?? positive(record.output_token_limit)
+  return {
+    id: id.replace(/^models\//, ''),
+    name: text(record.display_name) ?? text(record.displayName) ?? id,
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(maxTokens === undefined ? {} : { maxTokens }),
+  }
 }
 
 function authHeaders(route: CcSwitchRoute, credential: CcSwitchCredential): Record<string, string> {
@@ -93,7 +104,7 @@ export async function discoverRouteModels(
     const response = await fetch(listURL(route), { headers: authHeaders(route, credential), signal: requestSignal })
     if (!response.ok) throw new Error(`model listing returned HTTP ${response.status}`)
     const models = entries(await boundedJSON(response))
-      .map(value => parseModel(route, value))
+      .map(value => parseModel(value))
       .filter((model): model is CcSwitchModel => model !== undefined)
     const unique = new Map(models.map(model => [model.id, model]))
     return unique.size > 0 ? [...unique.values()] : route.models

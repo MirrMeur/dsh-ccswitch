@@ -173,3 +173,60 @@ test('keeps the declared table order when it already holds the default model', (
     cleanup()
   }
 })
+
+test('reads the Codex TOML context window as the route default', () => {
+  const { repository, cleanup } = catalogRepository({
+    auth: { OPENAI_API_KEY: 'test-key' },
+    config: [
+      'model_provider = "custom"',
+      'model = "gpt-6.1-sol"',
+      'model_context_window = 1000000',
+      'model_auto_compact_token_limit = 900000',
+      '',
+      '[model_providers.custom]',
+      'name = "Catalog Provider"',
+      'base_url = "https://example.test"',
+      'wire_api = "responses"',
+    ].join('\n'),
+    modelCatalog: {
+      models: [
+        { model: 'gpt-6.1-sol', reasoningLevels: ['high'] },
+        { model: 'gpt-6-sol' },
+        { model: 'gpt-6-astra', contextWindow: '200000' },
+      ],
+    },
+  })
+
+  try {
+    repository.read()
+    const [route] = repository.current.routes
+    assert.equal(route.contextWindow, 1_000_000)
+    // Rows that declare no size stay size-less so the route default answers for
+    // them; a row that declares one keeps it.
+    assert.deepEqual(route.models.map(model => model.contextWindow), [undefined, undefined, 200_000])
+    // The auto-compact threshold is not a model output cap.
+    assert.equal(route.maxTokens, undefined)
+  } finally {
+    cleanup()
+  }
+})
+
+test('DSH_CCSWITCH_DISCOVER can keep the configured model list', () => {
+  const previous = process.env.DSH_CCSWITCH_DISCOVER
+  const discoverModels = () => new CcSwitchRepository({ dbPath: '/nonexistent/cc-switch.db' }).config.discoverModels
+  try {
+    process.env.DSH_CCSWITCH_DISCOVER = '0'
+    assert.equal(discoverModels(), false)
+    process.env.DSH_CCSWITCH_DISCOVER = 'never'
+    assert.equal(discoverModels(), false)
+    process.env.DSH_CCSWITCH_DISCOVER = 'yes'
+    assert.equal(discoverModels(), true)
+    delete process.env.DSH_CCSWITCH_DISCOVER
+    assert.equal(discoverModels(), true)
+    process.env.DSH_CCSWITCH_DISCOVER = 'maybe'
+    assert.throws(discoverModels, /DSH_CCSWITCH_DISCOVER/)
+  } finally {
+    if (previous === undefined) delete process.env.DSH_CCSWITCH_DISCOVER
+    else process.env.DSH_CCSWITCH_DISCOVER = previous
+  }
+})

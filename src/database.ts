@@ -37,9 +37,9 @@ interface EndpointRow {
 }
 
 const APP_TYPES: readonly CcSwitchAppType[] = ['claude', 'codex', 'gemini']
-const DEFAULT_CONTEXT_WINDOW = 262_144
-const DEFAULT_MAX_TOKENS = 32_768
 const CODEX_REASONING_EFFORTS: readonly CcSwitchReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
+const ENABLED = ['1', 'true', 'on', 'yes', 'always']
+const DISABLED = ['0', 'false', 'off', 'no', 'never']
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -59,6 +59,22 @@ function configuredCodexReasoningEffort(value: string | undefined): CcSwitchReas
     return normalized as CcSwitchReasoningEffort
   }
   throw new Error('DSH_CCSWITCH_CODEX_REASONING must be provider, minimal, low, medium, or high')
+}
+
+/**
+ * Whether to ask each provider's endpoint for its own model list.
+ *
+ * Discovery replaces the model list CC Switch configured with whatever the
+ * endpoint advertises, which is how relays end up offering models the user
+ * never added. `DSH_CCSWITCH_DISCOVER=0` keeps the configured list instead;
+ * the sizes an endpoint reports are still merged into the configured models.
+ */
+function configuredDiscovery(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === undefined || normalized.length === 0) return true
+  if (DISABLED.includes(normalized)) return false
+  if (ENABLED.includes(normalized)) return true
+  throw new Error(`DSH_CCSWITCH_DISCOVER must be one of ${[...ENABLED, ...DISABLED].join(', ')}`)
 }
 
 function jsonObject(raw: string): Record<string, unknown> {
@@ -105,7 +121,17 @@ function codexConfigValue(config: string, key: string): string | undefined {
   return nonEmpty(match?.[1])
 }
 
-function codexProviderConfig(config: string): { baseURL?: string; protocol?: 'openai-completions' | 'openai-responses' } {
+/** Read an unquoted TOML integer such as Codex's `model_context_window = 1000000`. */
+function codexNumberValue(config: string, key: string): number | undefined {
+  const match = config.match(new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*([0-9]+)\\s*$`, 'm'))
+  return match?.[1] === undefined ? undefined : positiveInt(match[1])
+}
+
+function codexProviderConfig(config: string): {
+  baseURL?: string
+  protocol?: 'openai-completions' | 'openai-responses'
+  contextWindow?: number
+} {
   const providerId = codexConfigValue(config, 'model_provider')
   if (providerId === undefined) return {}
   const section = config.match(
@@ -115,8 +141,12 @@ function codexProviderConfig(config: string): { baseURL?: string; protocol?: 'op
   )?.[1] ?? ''
   const baseURL = codexConfigValue(section, 'base_url')
   const wireApi = codexConfigValue(section, 'wire_api')
+  // Codex keeps its window in the TOML rather than in the model table, so a
+  // relay that reports no sizes at all would otherwise fall back to 256K.
+  const contextWindow = codexNumberValue(config, 'model_context_window')
   return {
     ...(baseURL === undefined ? {} : { baseURL }),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
     protocol: wireApi === 'chat' || wireApi === 'completions'
       ? 'openai-completions'
       : 'openai-responses',
@@ -187,11 +217,16 @@ function codexCatalogModels(settings: Record<string, unknown>): CcSwitchModel[] 
     seen.add(id)
     const reasoningLevels = declaredReasoningLevels(entry.reasoningLevels ?? entry.reasoning_levels)
     const defaultReasoningLevel = canonicalReasoningLevel(entry.defaultReasoningLevel ?? entry.default_reasoning_level)
+    // Sizes stay optional: a row that omits them inherits the route default
+    // (the TOML's `model_context_window`), and only then the built-in fallback.
+    const contextWindow = positiveInt(entry.contextWindow ?? entry.context_window)
+    const maxTokens = positiveInt(entry.maxTokens ?? entry.max_tokens
+      ?? entry.maxOutputTokens ?? entry.max_output_tokens)
     models.push({
       id,
       name: nonEmpty(entry.displayName ?? entry.display_name) ?? id,
-      contextWindow: positiveInt(entry.contextWindow ?? entry.context_window) ?? DEFAULT_CONTEXT_WINDOW,
-      maxTokens: DEFAULT_MAX_TOKENS,
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+      ...(maxTokens === undefined ? {} : { maxTokens }),
       ...(reasoningLevels === undefined ? {} : { reasoningLevels }),
       ...(defaultReasoningLevel === undefined ? {} : { defaultReasoningLevel }),
     })
@@ -286,12 +321,7 @@ function routeFromRow(row: ProviderRow, endpoint: string | undefined): { route: 
   const declared = appType === 'codex' ? codexCatalogModels(settings) : []
   const models: CcSwitchModel[] = declared.some(entry => entry.id === model)
     ? declared
-    : [{
-        id: model,
-        name: model,
-        contextWindow: DEFAULT_CONTEXT_WINDOW,
-        maxTokens: DEFAULT_MAX_TOKENS,
-      }, ...declared]
+    : [{ id: model, name: model }, ...declared]
   const route: CcSwitchRoute = {
     provider: `ccswitch/${appType}/${sourceId}`,
     sourceId,
@@ -303,6 +333,7 @@ function routeFromRow(row: ProviderRow, endpoint: string | undefined): { route: 
       : appType === 'gemini' ? 'google-generative-ai' : codex.protocol ?? 'openai-responses',
     defaultModel: model,
     models,
+    ...(codex.contextWindow === undefined ? {} : { contextWindow: codex.contextWindow }),
     authKind: auth.kind,
     ...(auth.accountId === undefined ? {} : { accountId: auth.accountId }),
     fingerprint: hash({
@@ -336,7 +367,7 @@ export class CcSwitchRepository {
       dbPath,
       pollIntervalMs: Math.max(500, options.pollIntervalMs ?? 2_000),
       appTypes: APP_TYPES.filter(app => requestedApps.includes(app)),
-      discoverModels: options.discoverModels ?? true,
+      discoverModels: options.discoverModels ?? configuredDiscovery(process.env.DSH_CCSWITCH_DISCOVER),
       ...(options.providerSelectors === undefined ? {} : { providerSelectors: options.providerSelectors }),
       providerSelectionPath: options.providerSelectionPath
         ?? process.env.DSH_CCSWITCH_PROVIDERS_FILE
