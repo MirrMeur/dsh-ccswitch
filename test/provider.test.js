@@ -130,3 +130,60 @@ test('falls back to a model-declared default when the runtime default is unsuppo
     defaultEffort: 'xhigh',
   })
 })
+
+test('endpoint discovery keeps the thinking levels CC Switch declared', async () => {
+  // An endpoint reports slugs and sizes only, so a discovery pass used to strip
+  // the declared levels and leave `gpt-6-sol` — a name the heuristic does not
+  // recognise — with no level picker at all.
+  const codex = declaredRoute([
+    {
+      id: 'gpt-6-sol',
+      name: 'gpt-6-sol',
+      contextWindow: 128_000,
+      maxTokens: 8_192,
+      reasoningLevels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      defaultReasoningLevel: 'high',
+    },
+  ])
+  const repository = {
+    current: { version: 1, fingerprint: 'test', routes: [codex] },
+    config: { codexReasoningEffort: 'minimal' },
+  }
+  const adapter = new CcSwitchAdapter(repository)
+
+  adapter.setDiscoveredModels(codex.provider, [
+    { id: 'gpt-6-sol', name: 'gpt-6-sol', contextWindow: 1_000_000, maxTokens: 128_000 },
+    { id: 'gpt-6-astra', name: 'gpt-6-astra', contextWindow: 1_000_000, maxTokens: 128_000 },
+  ])
+
+  const declared = await adapter.resolveModel(codex.provider, 'gpt-6-sol')
+  assert.deepEqual(declared.reasoning?.efforts.map(effort => effort.id), [
+    'minimal', 'low', 'medium', 'high', 'xhigh', 'max',
+  ])
+  // The runtime-wide default still wins while the model supports it.
+  assert.equal(declared.reasoning?.defaultEffort, 'minimal')
+  // The endpoint's own size still wins, and an undeclared model stays bare.
+  assert.equal(declared.context.contextWindow, 1_000_000)
+  assert.equal((await adapter.resolveModel(codex.provider, 'gpt-6-astra')).reasoning, undefined)
+
+  // A model that cannot honour the runtime default answers with its own.
+  const narrowed = new CcSwitchAdapter({
+    current: {
+      version: 1,
+      fingerprint: 'test',
+      routes: [declaredRoute([{
+        id: 'gpt-6-sol',
+        name: 'gpt-6-sol',
+        contextWindow: 128_000,
+        maxTokens: 8_192,
+        reasoningLevels: ['xhigh'],
+        defaultReasoningLevel: 'xhigh',
+      }])],
+    },
+    config: { codexReasoningEffort: 'minimal' },
+  })
+  narrowed.setDiscoveredModels('ccswitch/codex/test', [
+    { id: 'gpt-6-sol', name: 'gpt-6-sol', contextWindow: 1_000_000, maxTokens: 128_000 },
+  ])
+  assert.equal((await narrowed.resolveModel('ccswitch/codex/test', 'gpt-6-sol')).reasoning?.defaultEffort, 'xhigh')
+})

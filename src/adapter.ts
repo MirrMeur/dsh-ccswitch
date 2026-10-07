@@ -100,16 +100,39 @@ export class CcSwitchAdapter extends LlmAdapter {
     this.resolveAttachments = resolveAttachments
   }
 
-  /** Publish endpoint-discovered models without touching the CC Switch DB. */
+  /**
+   * Publish endpoint-discovered models without touching the CC Switch DB.
+   *
+   * An endpoint reports slugs and sizes but knows nothing about thinking
+   * levels, so the declared levels are carried over from the catalog entry of
+   * the same id. Without this the discovery pass would silently strip the
+   * reasoning a user configured, and only models the name heuristic happens to
+   * recognise would keep a level picker.
+   */
   setDiscoveredModels(provider: string, models: readonly CcSwitchModel[]): void {
     if (models.length === 0) return
+    const declared = new Map(
+      (this.repository.current.routes.find(route => route.provider === provider)?.models ?? [])
+        .filter(model => model.reasoningLevels !== undefined || model.defaultReasoningLevel !== undefined)
+        .map(model => [model.id, model]),
+    )
+    const merged = models.map((model) => {
+      const source = declared.get(model.id)
+      if (source === undefined) return { ...model }
+      return {
+        ...model,
+        ...(source.reasoningLevels === undefined ? {} : { reasoningLevels: source.reasoningLevels }),
+        ...(source.defaultReasoningLevel === undefined ? {} : { defaultReasoningLevel: source.defaultReasoningLevel }),
+      }
+    })
     const previous = this.discovered.get(provider)
-    const same = previous !== undefined && previous.length === models.length
-      && previous.every((model, index) => model.id === models[index]?.id
-        && model.contextWindow === models[index]?.contextWindow
-        && model.maxTokens === models[index]?.maxTokens)
+    const same = previous !== undefined && previous.length === merged.length
+      && previous.every((model, index) => model.id === merged[index]?.id
+        && model.contextWindow === merged[index]?.contextWindow
+        && model.maxTokens === merged[index]?.maxTokens
+        && model.reasoningLevels?.join(',') === merged[index]?.reasoningLevels?.join(','))
     if (same) return
-    this.discovered.set(provider, models.map(model => ({ ...model })))
+    this.discovered.set(provider, merged)
     this.discoveredRevision += 1
     this.snapshot = undefined
   }
