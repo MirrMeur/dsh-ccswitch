@@ -149,6 +149,32 @@ function positiveInt(value: unknown): number | undefined {
  * camelCase and snake_case spellings CC Switch itself accepts, and duplicate
  * slugs keep their first occurrence.
  */
+/**
+ * Thinking levels pi-ai understands, lowest to highest. CC Switch spells the
+ * lowest one `none`, and also accepts an `ultra` effort that Codex knows but
+ * pi-ai does not.
+ */
+const PI_REASONING_LEVELS: readonly string[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+
+/** Map one CC Switch effort name onto pi-ai's vocabulary, or drop it. */
+function canonicalReasoningLevel(value: unknown): string | undefined {
+  const normalized = nonEmpty(value)?.toLowerCase()
+  if (normalized === undefined) return undefined
+  const level = normalized === 'none' ? 'off' : normalized
+  return PI_REASONING_LEVELS.includes(level) ? level : undefined
+}
+
+/** Canonicalize a declared `reasoningLevels` array, keeping declaration order. */
+function declaredReasoningLevels(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const levels: string[] = []
+  for (const item of value) {
+    const level = canonicalReasoningLevel(item)
+    if (level !== undefined && !levels.includes(level)) levels.push(level)
+  }
+  return levels.length > 0 ? levels : undefined
+}
+
 function codexCatalogModels(settings: Record<string, unknown>): CcSwitchModel[] {
   const rows = objectValue(settings.modelCatalog).models
   if (!Array.isArray(rows)) return []
@@ -159,11 +185,15 @@ function codexCatalogModels(settings: Record<string, unknown>): CcSwitchModel[] 
     const id = nonEmpty(entry.model)
     if (id === undefined || seen.has(id)) continue
     seen.add(id)
+    const reasoningLevels = declaredReasoningLevels(entry.reasoningLevels ?? entry.reasoning_levels)
+    const defaultReasoningLevel = canonicalReasoningLevel(entry.defaultReasoningLevel ?? entry.default_reasoning_level)
     models.push({
       id,
       name: nonEmpty(entry.displayName ?? entry.display_name) ?? id,
       contextWindow: positiveInt(entry.contextWindow ?? entry.context_window) ?? DEFAULT_CONTEXT_WINDOW,
       maxTokens: DEFAULT_MAX_TOKENS,
+      ...(reasoningLevels === undefined ? {} : { reasoningLevels }),
+      ...(defaultReasoningLevel === undefined ? {} : { defaultReasoningLevel }),
     })
   }
   return models

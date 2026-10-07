@@ -54,17 +54,22 @@ function modelInfo(model: Model<Api>): LlmModelInfo {
 function reasoningInfo(
   model: Model<Api>,
   defaultEffort: string | undefined,
+  declaredDefaultEffort: string | undefined,
 ): Pick<LlmResolvedModelInfo, 'reasoning'> | Record<string, never> {
   if (!model.reasoning) return {}
   const levels = getSupportedThinkingLevels(model)
-  const hasDefault = defaultEffort !== undefined && levels.some(level => level === defaultEffort)
+  // The runtime-wide default wins when the model supports it; a model that
+  // declares its own default (CC Switch's `defaultReasoningLevel`) answers for
+  // itself otherwise, so a model offering only `xhigh` still preselects it.
+  const effort = [defaultEffort, declaredDefaultEffort]
+    .find(candidate => candidate !== undefined && levels.some(level => level === candidate))
   return {
     reasoning: {
       efforts: levels.map(level => ({
         id: ReasoningEffortId(level),
         name: `${level.charAt(0).toUpperCase()}${level.slice(1)}`,
       })),
-      ...hasDefault ? { defaultEffort: ReasoningEffortId(defaultEffort) } : {},
+      ...effort === undefined ? {} : { defaultEffort: ReasoningEffortId(effort) },
     },
   }
 }
@@ -153,11 +158,14 @@ export class CcSwitchAdapter extends LlmAdapter {
   }
 
   override resolveModel(provider: string, modelId: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    const model = this.model(this.current(), provider, modelId)
+    const snapshot = this.current()
+    const model = this.model(snapshot, provider, modelId)
+    const declaredDefault = this.route(snapshot, provider).models
+      .find(entry => entry.id === modelId)?.defaultReasoningLevel
     return Promise.resolve({
       ...modelInfo(model),
       context: { contextWindow: model.contextWindow },
-      ...reasoningInfo(model, this.repository.config.codexReasoningEffort),
+      ...reasoningInfo(model, this.repository.config.codexReasoningEffort, declaredDefault),
     })
   }
 

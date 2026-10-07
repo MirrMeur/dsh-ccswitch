@@ -4,7 +4,7 @@ import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messag
 import { googleGenerativeAIApi } from '@earendil-works/pi-ai/api/google-generative-ai.lazy'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
-import type { CcSwitchRoute } from './types.ts'
+import type { CcSwitchModel, CcSwitchRoute } from './types.ts'
 import { geminiOAuthRoute } from './gemini-oauth.ts'
 
 const NO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
@@ -19,6 +19,39 @@ const CODEX_THINKING_LEVELS = {
   max: null,
 } satisfies ThinkingLevelMap
 
+/** Every thinking level pi-ai will offer, lowest to highest. */
+const PI_THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/**
+ * Gate pi-ai's thinking levels to the ones CC Switch declares for a model.
+ *
+ * `thinkingLevelMap` serves double duty: a level mapped to `null` is refused by
+ * `getSupportedThinkingLevels`, while a string is both offered and sent as that
+ * effort. Undeclared levels become `null` so a model that declares only
+ * `xhigh` offers only `xhigh`, and `off` maps to the `none` effort CC Switch
+ * and Codex use to disable thinking.
+ */
+function declaredThinkingLevels(levels: readonly string[]): ThinkingLevelMap {
+  const declared = new Set(levels)
+  const map: ThinkingLevelMap = {}
+  for (const level of PI_THINKING_LEVELS) {
+    map[level] = declared.has(level) ? (level === 'off' ? 'none' : level) : null
+  }
+  return map
+}
+
+/**
+ * The thinking levels to advertise for one model. A CC Switch declaration wins;
+ * otherwise codex routes fall back to the model-name heuristic, because relays
+ * that predate the model table still need their reasoning families enabled.
+ */
+function thinkingLevelsFor(route: CcSwitchRoute, model: CcSwitchModel): ThinkingLevelMap | undefined {
+  if (model.reasoningLevels !== undefined) return declaredThinkingLevels(model.reasoningLevels)
+  return route.appType === 'codex' && CODEX_REASONING_MODEL.test(model.id)
+    ? CODEX_THINKING_LEVELS
+    : undefined
+}
+
 function routeApi(route: CcSwitchRoute): ProviderStreams {
   switch (route.protocol) {
     case 'anthropic-messages': return anthropicMessagesApi()
@@ -30,15 +63,15 @@ function routeApi(route: CcSwitchRoute): ProviderStreams {
 
 function routeModels(route: CcSwitchRoute): readonly Model<Api>[] {
   return route.models.map((model) => {
-    const reasoning = route.appType === 'codex' && CODEX_REASONING_MODEL.test(model.id)
+    const thinkingLevelMap = thinkingLevelsFor(route, model)
     return {
       id: model.id,
       name: model.name,
       api: route.protocol,
       provider: route.provider,
       baseUrl: route.baseURL,
-      reasoning,
-      ...(reasoning ? { thinkingLevelMap: CODEX_THINKING_LEVELS } : {}),
+      reasoning: thinkingLevelMap !== undefined,
+      ...(thinkingLevelMap === undefined ? {} : { thinkingLevelMap }),
       input: ['text', 'image'],
       cost: NO_COST,
       contextWindow: model.contextWindow,

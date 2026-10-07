@@ -62,3 +62,71 @@ test('publishes the configured Codex reasoning default to DSH', async () => {
     defaultEffort: 'minimal',
   })
 })
+
+/** One codex route carrying an explicit CC Switch model table. */
+function declaredRoute(models) {
+  return {
+    ...route('codex', models[0].id),
+    defaultModel: models[0].id,
+    models,
+  }
+}
+
+test('a declared model table overrides the reasoning name heuristic', () => {
+  // `gpt-6-sol` matches no branch of CODEX_REASONING_MODEL, so without a
+  // declaration it advertises no reasoning at all.
+  assert.equal(modelForRoute(route('codex', 'gpt-6-sol'), 'gpt-6-sol')?.reasoning, false)
+
+  const xhighOnly = declaredRoute([
+    { id: 'gpt-6-sol', name: 'gpt-6-sol', contextWindow: 128_000, maxTokens: 8_192, reasoningLevels: ['xhigh'] },
+  ])
+  const model = modelForRoute(xhighOnly, 'gpt-6-sol')
+  assert.equal(model?.reasoning, true)
+  // Undeclared levels are refused, so only `xhigh` survives the support gate.
+  assert.deepEqual(model?.thinkingLevelMap, {
+    off: null,
+    minimal: null,
+    low: null,
+    medium: null,
+    high: null,
+    xhigh: 'xhigh',
+    max: null,
+  })
+
+  const withOff = declaredRoute([
+    { id: 'gpt-6.1-sol', name: 'gpt-6.1-sol', contextWindow: 128_000, maxTokens: 8_192, reasoningLevels: ['off', 'high'] },
+  ])
+  assert.deepEqual(modelForRoute(withOff, 'gpt-6.1-sol')?.thinkingLevelMap, {
+    off: 'none',
+    minimal: null,
+    low: null,
+    medium: null,
+    high: 'high',
+    xhigh: null,
+    max: null,
+  })
+})
+
+test('falls back to a model-declared default when the runtime default is unsupported', async () => {
+  const codex = declaredRoute([
+    {
+      id: 'gpt-6-sol',
+      name: 'gpt-6-sol',
+      contextWindow: 128_000,
+      maxTokens: 8_192,
+      reasoningLevels: ['xhigh'],
+      defaultReasoningLevel: 'xhigh',
+    },
+  ])
+  const repository = {
+    current: { version: 1, fingerprint: 'test', routes: [codex] },
+    config: { codexReasoningEffort: 'minimal' },
+  }
+  const adapter = new CcSwitchAdapter(repository)
+
+  const resolved = await adapter.resolveModel(codex.provider, 'gpt-6-sol')
+  assert.deepEqual(resolved.reasoning, {
+    efforts: [{ id: 'xhigh', name: 'Xhigh' }],
+    defaultEffort: 'xhigh',
+  })
+})

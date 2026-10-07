@@ -31,6 +31,15 @@ export interface CcSwitchModel {
   readonly name: string
   readonly contextWindow: number
   readonly maxTokens: number
+  /**
+   * Thinking levels CC Switch declares for this model, already canonicalized to
+   * pi-ai's vocabulary (`none` becomes `off`, `ultra` and typos are dropped).
+   * Absent means the provider declared none, so callers fall back to their own
+   * heuristic.
+   */
+  readonly reasoningLevels?: readonly string[]
+  /** The model's declared default thinking level, canonicalized the same way. */
+  readonly defaultReasoningLevel?: string
 }
 
 export interface CcSwitchCredential {

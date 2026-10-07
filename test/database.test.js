@@ -119,8 +119,14 @@ test('reads the per-provider Codex model catalog from settings_config', () => {
     config: CODEX_CONFIG,
     modelCatalog: {
       models: [
-        { model: 'gpt-6.1-sol', displayName: 'GPT 6.1 Sol', contextWindow: '1000000' },
-        { model: 'gpt-6-sol', display_name: 'GPT 6 Sol' },
+        {
+          model: 'gpt-6.1-sol',
+          displayName: 'GPT 6.1 Sol',
+          contextWindow: '1000000',
+          reasoningLevels: ['none', 'high', 'ultra', 'bogus'],
+          defaultReasoningLevel: 'none',
+        },
+        { model: 'gpt-6-sol', display_name: 'GPT 6 Sol', reasoning_levels: ['xhigh'] },
         { model: 'gpt-6.1-sol' },
         { model: '   ' },
       ],
@@ -136,6 +142,13 @@ test('reads the per-provider Codex model catalog from settings_config', () => {
     assert.deepEqual(route.models.map(model => model.name), ['gpt-5.5', 'GPT 6.1 Sol', 'GPT 6 Sol'])
     assert.equal(route.models[1].contextWindow, 1_000_000)
     assert.equal(route.defaultModel, 'gpt-5.5')
+    // `none` becomes pi-ai's `off`; `ultra` and typos are dropped.
+    assert.deepEqual(route.models[1].reasoningLevels, ['off', 'high'])
+    assert.equal(route.models[1].defaultReasoningLevel, 'off')
+    assert.deepEqual(route.models[2].reasoningLevels, ['xhigh'])
+    assert.equal(route.models[2].defaultReasoningLevel, undefined)
+    // The synthesised TOML default declares nothing, so the heuristic keeps it.
+    assert.equal(route.models[0].reasoningLevels, undefined)
   } finally {
     cleanup()
   }
