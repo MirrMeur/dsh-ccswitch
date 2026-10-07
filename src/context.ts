@@ -4,14 +4,20 @@
  * @module dsh-llm-pi-ai/context
  */
 
-import { CallId, contentHasImage, LlmError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, contentHasImage, LlmError } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { Context as PiContext, ImageContent, Message as PiMessage, TextContent, Tool as PiTool } from '@earendil-works/pi-ai'
 import { toPiAssistant } from './replay.ts'
 
-/** Join the text blocks of a harness message. */
-function flattenText(message: Message): string {
+/**
+ * Join the text blocks of a model-facing message body.
+ *
+ * Widened to a structural parameter because `GenerateOptions.messages` also
+ * admits `RequestUserInput`, a per-request user body that carries no durable
+ * Session identity or source.
+ */
+function flattenText(message: { readonly content: readonly ContentBlock[] }): string {
   return message.content
     .filter(block => block.type === 'text')
     .map(block => block.text)
@@ -19,11 +25,9 @@ function flattenText(message: Message): string {
 }
 
 
-/** Flatten text recursively inside one tool result. */
+/** Flatten the text of one tool-result message's blocks. */
 function toolResultText(blocks: readonly ContentBlock[]): string {
-  return blocks.map(block => block.type === 'text'
-    ? block.text
-    : block.type === 'tool-result' ? toolResultText(block.content) : '').join('')
+  return blocks.map(block => block.type === 'text' ? block.text : '').join('')
 }
 
 async function userContent(
@@ -45,16 +49,6 @@ async function userContent(
         })
         break
       }
-      case 'tool-result':
-        {
-          const nested = await userContent(block.content, attachments)
-          if (typeof nested === 'string') {
-            if (nested.length > 0) content.push({ type: 'text', text: nested })
-          } else {
-            content.push(...nested)
-          }
-        }
-        break
       default:
         // Other merge-extensible blocks are not user-input vocabulary for pi-ai.
         break
@@ -85,7 +79,7 @@ function piContext(options: GenerateOptions, messages: PiMessage[]): PiContext {
 }
 
 function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: string) => void): PiContext {
-  const toolNames = new Map<CallId, string>()
+  const toolNames = new Map<ToolCallId, string>()
   const messages: PiMessage[] = []
   for (const message of options.messages) {
     if (contentHasImage(message.content)) {
@@ -97,26 +91,25 @@ function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: st
     }
     if (message.role === 'assistant') {
       const assistant = toPiAssistant(message, onReplayDegrade)
-      for (const block of assistant.content) if (block.type === 'toolCall') toolNames.set(CallId(block.id), block.name)
+      for (const block of assistant.content) if (block.type === 'toolCall') toolNames.set(ToolCallId(block.id), block.name)
       messages.push(assistant)
       continue
     }
-    const text = flattenText(message)
-    const results = message.content.filter(block => block.type === 'tool-result')
-    if (text.length > 0 || results.length === 0) messages.push({ role: 'user', content: text, timestamp: 0 })
-    for (const result of results) {
+    if (message.role === 'tool') {
       messages.push({
         role: 'toolResult',
-        toolCallId: result.toolCallId,
-        toolName: toolNames.get(result.toolCallId) ?? 'unknown',
+        toolCallId: message.toolCallId,
+        toolName: toolNames.get(message.toolCallId) ?? 'unknown',
         content: [{
           type: 'text',
-          text: toolResultText(result.content) || '(no output)',
+          text: toolResultText(message.content) || '(no output)',
         }],
-        isError: result.isError ?? false,
+        isError: message.isError ?? false,
         timestamp: 0,
       })
+      continue
     }
+    messages.push({ role: 'user', content: flattenText(message), timestamp: 0 })
   }
   return piContext(options, messages)
 }
@@ -162,7 +155,7 @@ async function toPiContextWithImages(
   attachments: AttachmentStore,
   onReplayDegrade?: (reason: string) => void,
 ): Promise<PiContext> {
-  const toolNames = new Map<CallId, string>()
+  const toolNames = new Map<ToolCallId, string>()
   const messages: PiMessage[] = []
 
   for (const message of options.messages) {
@@ -179,31 +172,30 @@ async function toPiContextWithImages(
     if (message.role === 'assistant') {
       const assistant = toPiAssistant(message, onReplayDegrade)
       for (const block of assistant.content) {
-        if (block.type === 'toolCall') toolNames.set(CallId(block.id), block.name)
+        if (block.type === 'toolCall') toolNames.set(ToolCallId(block.id), block.name)
       }
       messages.push(assistant)
       continue
     }
-    // user role: text + tool results (each result becomes its own message).
-    const regular = message.content.filter(block => block.type !== 'tool-result')
-    const content = await userContent(regular, attachments)
-    const results = message.content.filter(block => block.type === 'tool-result')
-    if (content.length > 0 || results.length === 0) {
-      messages.push({ role: 'user', content, timestamp: 0 })
-    }
-    for (const result of results) {
-      const resultContent = await userContent(result.content, attachments)
+    // Tool results are first-class `role: 'tool'` messages in this harness
+    // version; each one maps onto a single pi-ai toolResult message.
+    if (message.role === 'tool') {
+      const resultContent = await userContent(message.content, attachments)
       messages.push({
         role: 'toolResult',
-        toolCallId: result.toolCallId,
-        toolName: toolNames.get(result.toolCallId) ?? 'unknown',
+        toolCallId: message.toolCallId,
+        toolName: toolNames.get(message.toolCallId) ?? 'unknown',
         content: typeof resultContent === 'string'
           ? [{ type: 'text', text: resultContent || '(no output)' }]
           : resultContent,
-        isError: result.isError ?? false,
+        isError: message.isError ?? false,
         timestamp: 0,
       })
+      continue
     }
+    // user / developer role: plain model-facing content.
+    const content = await userContent(message.content, attachments)
+    messages.push({ role: 'user', content, timestamp: 0 })
   }
 
   return piContext(options, messages)

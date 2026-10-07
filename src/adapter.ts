@@ -80,15 +80,19 @@ function resolveReasoningLevel(model: Model<Api>, effort: string | undefined): T
 }
 
 export class CcSwitchAdapter extends LlmAdapter {
+  private readonly repository: CcSwitchRepository
+  private readonly resolveAttachments?: () => AttachmentStore | undefined
   private snapshot: Snapshot | undefined
   private discovered = new Map<string, readonly CcSwitchModel[]>()
   private discoveredRevision = 0
 
   constructor(
-    private readonly repository: CcSwitchRepository,
-    private readonly resolveAttachments?: () => AttachmentStore | undefined,
+    repository: CcSwitchRepository,
+    resolveAttachments?: () => AttachmentStore | undefined,
   ) {
     super()
+    this.repository = repository
+    this.resolveAttachments = resolveAttachments
   }
 
   /** Publish endpoint-discovered models without touching the CC Switch DB. */
