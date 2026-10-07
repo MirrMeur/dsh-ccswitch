@@ -127,6 +127,48 @@ function stripGeminiModelPrefix(id: string): string {
   return id.replace(/^models\//, '').trim()
 }
 
+/**
+ * Read a positive integer that CC Switch may hold as a JSON number or as a
+ * numeric string; zero, negatives, and junk are ignored.
+ */
+function positiveInt(value: unknown): number | undefined {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim().length > 0 ? Number(value.trim()) : Number.NaN
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
+}
+
+/**
+ * Read the per-provider model table CC Switch keeps at
+ * `settings_config.modelCatalog.models`.
+ *
+ * This table lives beside the provider rather than only in the generated
+ * `~/.codex/cc-switch-model-catalog.json`, because that file always describes
+ * whichever provider is currently active — reading it for a background
+ * provider would report another provider's models. Field names accept the
+ * camelCase and snake_case spellings CC Switch itself accepts, and duplicate
+ * slugs keep their first occurrence.
+ */
+function codexCatalogModels(settings: Record<string, unknown>): CcSwitchModel[] {
+  const rows = objectValue(settings.modelCatalog).models
+  if (!Array.isArray(rows)) return []
+  const models: CcSwitchModel[] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const entry = objectValue(row)
+    const id = nonEmpty(entry.model)
+    if (id === undefined || seen.has(id)) continue
+    seen.add(id)
+    models.push({
+      id,
+      name: nonEmpty(entry.displayName ?? entry.display_name) ?? id,
+      contextWindow: positiveInt(entry.contextWindow ?? entry.context_window) ?? DEFAULT_CONTEXT_WINDOW,
+      maxTokens: DEFAULT_MAX_TOKENS,
+    })
+  }
+  return models
+}
+
 function defaultModel(settings: Record<string, unknown>, appType: CcSwitchAppType): string {
   const env = objectValue(settings.env)
   const value = appType === 'claude'
@@ -205,9 +247,21 @@ function routeFromRow(row: ProviderRow, endpoint: string | undefined): { route: 
       : envValue(settings, 'GOOGLE_GEMINI_BASE_URL') ?? settingValue(settings, 'base_url', 'baseURL') ?? endpoint ?? defaultBaseURL
   if (baseURL === undefined) return undefined
 
-  const model = defaultModel(settings, appType)
+  const model = stripGeminiModelPrefix(defaultModel(settings, appType))
   const sourceId = row.id.trim()
   if (sourceId.length === 0 || model.length === 0) return undefined
+  // Codex providers may declare a whole model table in CC Switch. When they
+  // do, that table is the model list; the TOML's `model` is only guaranteed a
+  // seat. Endpoint discovery can still replace this list at runtime.
+  const declared = appType === 'codex' ? codexCatalogModels(settings) : []
+  const models: CcSwitchModel[] = declared.some(entry => entry.id === model)
+    ? declared
+    : [{
+        id: model,
+        name: model,
+        contextWindow: DEFAULT_CONTEXT_WINDOW,
+        maxTokens: DEFAULT_MAX_TOKENS,
+      }, ...declared]
   const route: CcSwitchRoute = {
     provider: `ccswitch/${appType}/${sourceId}`,
     sourceId,
@@ -217,13 +271,8 @@ function routeFromRow(row: ProviderRow, endpoint: string | undefined): { route: 
     protocol: appType === 'claude'
       ? 'anthropic-messages'
       : appType === 'gemini' ? 'google-generative-ai' : codex.protocol ?? 'openai-responses',
-    defaultModel: stripGeminiModelPrefix(model),
-    models: [{
-      id: stripGeminiModelPrefix(model),
-      name: stripGeminiModelPrefix(model),
-      contextWindow: DEFAULT_CONTEXT_WINDOW,
-      maxTokens: DEFAULT_MAX_TOKENS,
-    }],
+    defaultModel: model,
+    models,
     authKind: auth.kind,
     ...(auth.accountId === undefined ? {} : { accountId: auth.accountId }),
     fingerprint: hash({
